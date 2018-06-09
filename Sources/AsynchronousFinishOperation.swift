@@ -55,6 +55,7 @@ class AsynchronousFinishOperation: Operation {
         }
 
         _isExecuting = true
+        main()
     }
 
     override func main() {

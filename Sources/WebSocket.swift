@@ -123,7 +123,7 @@ public protocol WSStream {
     var delegate: WSStreamDelegate? {get set}
     func connect(url: URL, port: Int, timeout: TimeInterval, ssl: SSLSettings, completion: @escaping ((Error?) -> Void))
     func write(data: inout Data, isCancelled: @escaping () -> Bool, completion: @escaping (Error?) -> Void)
-    func read(completion: @escaping (Data?) -> Void)
+    func read() -> Data?
     func cleanup()
     #if os(Linux) || os(watchOS)
     #else
@@ -252,19 +252,21 @@ open class FoundationStream : NSObject, WSStream, StreamDelegate  {
                 let len = outStream.write(buffer + total, maxLength: offset - total)
                 if len <= 0 {
                     completion(WSError(type: .outputStreamWriteError, message: "output stream had an error during write", code: 0))
-                    break
+                    return
                 } else {
                     total += len
                 }
                 if total >= offset {
                     completion(nil)
-                    break
+                    return
                 }
             }
+
+            completion(WSError(type: .outputStreamWriteError, message: "output stream had an error during write", code: 1))
         }
     }
     
-    private func read() -> Data? {
+    public func read() -> Data? {
         guard let stream = inputStream else {return nil}
         let buf = NSMutableData(capacity: BUFFER_MAX)
         let buffer = UnsafeMutableRawPointer(mutating: buf!.bytes).assumingMemoryBound(to: UInt8.self)
@@ -273,10 +275,6 @@ open class FoundationStream : NSObject, WSStream, StreamDelegate  {
             return nil
         }
         return Data(bytes: buffer, count: length)
-    }
-
-    public func read(completion: @escaping (Data?) -> Void) {
-        completion(read())
     }
     
     public func cleanup() {
@@ -504,10 +502,10 @@ open class WebSocket : NSObject, StreamDelegate, WebSocketClient, WSStreamDelega
         writeQueue.maxConcurrentOperationCount = 1
     }
     
-    public convenience init(url: URL, protocols: [String]? = nil) {
+    public convenience init(url: URL, protocols: [String]? = nil, stream: WSStream = FoundationStream()) {
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
-        self.init(request: request, protocols: protocols)
+        self.init(request: request, protocols: protocols, stream: stream)
     }
 
     // Used for specifically setting the QOS for the write queue.
@@ -780,10 +778,8 @@ open class WebSocket : NSObject, StreamDelegate, WebSocketClient, WSStreamDelega
      Handles the incoming bytes and sending them to the proper processing method.
      */
     private func processInputStream() {
-        stream.read { [weak self] data in
-            guard let d = data else { return }
-
-            self?._processInputStream(data: d)
+        stream.read().map {
+            self._processInputStream(data: $0)
         }
     }
 
@@ -1271,7 +1267,7 @@ open class WebSocket : NSObject, StreamDelegate, WebSocketClient, WSStreamDelega
                 }
             }
             let dataLength = data.count
-            var frame = Data(capacity: dataLength + s.MaxFrameSize)
+            var frame = Data(count: dataLength + s.MaxFrameSize)
 
             frame.withUnsafeMutableBytes { (buffer: UnsafeMutablePointer<UInt8>) in
                 buffer[0] = firstByte

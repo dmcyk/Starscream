@@ -10,8 +10,10 @@ import Foundation
 #if canImport(Network)
 import Network
 
+private let BUFFER_MAX = 4096
+
 @available(macOS 10.14, *)
-class NetworkStream: WSStream {
+public class NetworkStream: WSStream {
 
     private let connectionQueue = DispatchQueue(label: "network_stream_connection", attributes: [])
 
@@ -22,11 +24,13 @@ class NetworkStream: WSStream {
         case noConnection
     }
 
-    weak var delegate: WSStreamDelegate?
+    public weak var delegate: WSStreamDelegate?
     private var openConnection: NWConnection?
-    let BUFFER_MAX = 4096
 
-    func connect(url: URL, port: Int, timeout: TimeInterval, ssl: SSLSettings, completion: @escaping ((Swift.Error?) -> Void)) {
+    private var readBuffer = Data(capacity: BUFFER_MAX * 2)
+    public init() {}
+
+    public func connect(url: URL, port: Int, timeout: TimeInterval, ssl: SSLSettings, completion: @escaping ((Swift.Error?) -> Void)) {
         guard let port = NWEndpoint.Port(rawValue: UInt16(port)) else {
             completion(Error.invalidPort)
             return
@@ -46,22 +50,42 @@ class NetworkStream: WSStream {
 
         let parameters = NWParameters.init(tls: tlsOptions, tcp: NWProtocolTCP.Options())
         let connection = NWConnection(host: host, port: port, using: parameters)
-        connection.start(queue: connectionQueue)
 
-        connection.stateUpdateHandler = { [connection] state in
+        connection.stateUpdateHandler = { [self, connection] state in
             switch state {
                 case .ready:
+                    self.openConnection = connection
                     connection.stateUpdateHandler = nil
                     completion(nil)
+                    self.observeRead()
                 case .failed(let error):
                     connection.stateUpdateHandler = nil
                     completion(error)
                 default: break
             }
         }
+
+        connection.start(queue: connectionQueue)
     }
 
-    func write(data: inout Data, isCancelled: @escaping () -> Bool, completion: @escaping (Swift.Error?) -> Void) {
+    private func observeRead() {
+        guard let connection = openConnection else { return }
+
+        connection.receive(minimumIncompleteLength: 1, maximumLength: BUFFER_MAX) { [weak self] data, contentContext, isComplete, error in
+            guard let `self` = self else { return }
+
+            data.map { self.readBuffer.append(contentsOf: $0) }
+
+            print("reading: \(data?.count ?? 0)")
+
+            self.delegate?.newBytesInStream()
+            if !isComplete {
+                self.observeRead()
+            }
+        }
+    }
+
+    public func write(data: inout Data, isCancelled: @escaping () -> Bool, completion: @escaping (Swift.Error?) -> Void) {
         guard let connection = openConnection else {
             completion(Error.noConnection)
             return
@@ -72,24 +96,19 @@ class NetworkStream: WSStream {
         })
     }
 
-    func read(completion: @escaping (Data?) -> Void) {
-        guard let connection = openConnection else {
-            completion(nil)
-            return
-        }
-
-        connection.receive(minimumIncompleteLength: 0, maximumLength: BUFFER_MAX) { data, contentContext, isComplete, error in
-            completion(data)
-        }
+    public func read() -> Data? {
+        let data = readBuffer
+        readBuffer.removeAll()
+        return data.isEmpty ? nil : data
     }
 
-    func cleanup() {
+    public func cleanup() {
         openConnection?.stateUpdateHandler = nil
         openConnection?.cancel()
         openConnection = nil
     }
 
-    func sslTrust() -> (trust: SecTrust?, domain: String?) {
+    public func sslTrust() -> (trust: SecTrust?, domain: String?) {
         return (nil, nil)
     }
 }
