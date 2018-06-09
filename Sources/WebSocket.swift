@@ -122,8 +122,8 @@ public protocol WSStreamDelegate: class {
 public protocol WSStream {
     var delegate: WSStreamDelegate? {get set}
     func connect(url: URL, port: Int, timeout: TimeInterval, ssl: SSLSettings, completion: @escaping ((Error?) -> Void))
-    func write(data: Data) -> Int
-    func read() -> Data?
+    func write(data: inout Data, isCancelled: @escaping () -> Bool, completion: @escaping (Error?) -> Void)
+    func read(completion: @escaping (Data?) -> Void)
     func cleanup()
     #if os(Linux) || os(watchOS)
     #else
@@ -137,6 +137,10 @@ open class FoundationStream : NSObject, WSStream, StreamDelegate  {
     private var outputStream: OutputStream?
     public weak var delegate: WSStreamDelegate?
     let BUFFER_MAX = 4096
+
+    enum StreamError: Swift.Error {
+        case noOutputStream
+    }
 	
 	public var enableSOCKSProxy = false
     
@@ -228,13 +232,39 @@ open class FoundationStream : NSObject, WSStream, StreamDelegate  {
         }
     }
     
-    public func write(data: Data) -> Int {
-        guard let outStream = outputStream else {return -1}
-        let buffer = UnsafeRawPointer((data as NSData).bytes).assumingMemoryBound(to: UInt8.self)
-        return outStream.write(buffer, maxLength: data.count)
+//    private func write(data: Data) -> Int {
+//        guard let outStream = outputStream else {return -1}
+//        let buffer = UnsafeRawPointer((data as NSData).bytes).assumingMemoryBound(to: UInt8.self)
+//        return outStream.write(buffer, maxLength: data.count)
+//    }
+
+    public func write(data: inout Data, isCancelled: @escaping () -> Bool, completion: @escaping (Error?) -> Void) {
+        guard let outStream = outputStream else {
+            completion(StreamError.noOutputStream)
+            return
+        }
+
+        var total = 0
+        let offset = data.count
+
+        data.withUnsafeBytes { (buffer: UnsafePointer<UInt8>) in
+            while !isCancelled() {
+                let len = outStream.write(buffer + total, maxLength: offset - total)
+                if len <= 0 {
+                    completion(WSError(type: .outputStreamWriteError, message: "output stream had an error during write", code: 0))
+                    break
+                } else {
+                    total += len
+                }
+                if total >= offset {
+                    completion(nil)
+                    break
+                }
+            }
+        }
     }
     
-    public func read() -> Data? {
+    private func read() -> Data? {
         guard let stream = inputStream else {return nil}
         let buf = NSMutableData(capacity: BUFFER_MAX)
         let buffer = UnsafeMutableRawPointer(mutating: buf!.bytes).assumingMemoryBound(to: UInt8.self)
@@ -243,6 +273,10 @@ open class FoundationStream : NSObject, WSStream, StreamDelegate  {
             return nil
         }
         return Data(bytes: buffer, count: length)
+    }
+
+    public func read(completion: @escaping (Data?) -> Void) {
+        completion(read())
     }
     
     public func cleanup() {
@@ -663,29 +697,38 @@ open class WebSocket : NSObject, StreamDelegate, WebSocketClient, WSStreamDelega
                 s.disconnectStream(error)
                 return
             }
-            let operation = BlockOperation()
-            operation.addExecutionBlock { [weak self, weak operation] in
-                guard let sOperation = operation, let s = self else { return }
-                guard !sOperation.isCancelled else { return }
+
+            let operation = AsynchronousFinishOperation { [weak self] isCancelledCheck, completion in
+                guard let s = self, !isCancelledCheck() else {
+                    completion()
+                    return
+                }
+
                 // Do the pinning now if needed
                 #if os(Linux) || os(watchOS)
-                    s.certValidated = false
+                s.certValidated = false
                 #else
-                    if let sec = s.security, !s.certValidated {
-                        let trustObj = s.stream.sslTrust()
-                        if let possibleTrust = trustObj.trust {
-                            s.certValidated = sec.isValid(possibleTrust, domain: trustObj.domain)
-                        } else {
-                            s.certValidated = false
-                        }
-                        if !s.certValidated {
-                            s.disconnectStream(WSError(type: .invalidSSLError, message: "Invalid SSL certificate", code: 0))
-                            return
-                        }
+                if let sec = s.security, !s.certValidated {
+                    let trustObj = s.stream.sslTrust()
+                    if let possibleTrust = trustObj.trust {
+                        s.certValidated = sec.isValid(possibleTrust, domain: trustObj.domain)
+                    } else {
+                        s.certValidated = false
                     }
+                    if !s.certValidated {
+                        s.disconnectStream(WSError(type: .invalidSSLError, message: "Invalid SSL certificate", code: 0))
+                        completion()
+                        return
+                    }
+                }
                 #endif
-                let _ = s.stream.write(data: data)
+                
+                var capturedData = data
+                s.stream.write(data: &capturedData, isCancelled: isCancelledCheck) { _ in
+                    completion()
+                }
             }
+
             s.writeQueue.addOperation(operation)
         })
 
@@ -737,8 +780,14 @@ open class WebSocket : NSObject, StreamDelegate, WebSocketClient, WSStreamDelega
      Handles the incoming bytes and sending them to the proper processing method.
      */
     private func processInputStream() {
-        let data = stream.read()
-        guard let d = data else { return }
+        stream.read { [weak self] data in
+            guard let d = data else { return }
+
+            self?._processInputStream(data: d)
+        }
+    }
+
+    private func _processInputStream(data d: Data) {
         var process = false
         if inputQueue.count == 0 {
             process = true
@@ -1200,11 +1249,13 @@ open class WebSocket : NSObject, StreamDelegate, WebSocketClient, WSStreamDelega
      Used to write things to the stream
      */
     private func dequeueWrite(_ data: Data, code: OpCode, writeCompletion: (() -> ())? = nil) {
-        let operation = BlockOperation()
-        operation.addExecutionBlock { [weak self, weak operation] in
+        let operation = AsynchronousFinishOperation { [weak self] isCancelled, completion in
             //stream isn't ready, let's wait
-            guard let s = self else { return }
-            guard let sOperation = operation else { return }
+            guard let s = self else {
+                completion()
+                return
+            }
+
             var offset = 2
             var firstByte:UInt8 = s.FinMask | code.rawValue
             var data = data
@@ -1220,53 +1271,53 @@ open class WebSocket : NSObject, StreamDelegate, WebSocketClient, WSStreamDelega
                 }
             }
             let dataLength = data.count
-            let frame = NSMutableData(capacity: dataLength + s.MaxFrameSize)
-            let buffer = UnsafeMutableRawPointer(frame!.mutableBytes).assumingMemoryBound(to: UInt8.self)
-            buffer[0] = firstByte
-            if dataLength < 126 {
-                buffer[1] = CUnsignedChar(dataLength)
-            } else if dataLength <= Int(UInt16.max) {
-                buffer[1] = 126
-                WebSocket.writeUint16(buffer, offset: offset, value: UInt16(dataLength))
-                offset += MemoryLayout<UInt16>.size
-            } else {
-                buffer[1] = 127
-                WebSocket.writeUint64(buffer, offset: offset, value: UInt64(dataLength))
-                offset += MemoryLayout<UInt64>.size
-            }
-            buffer[1] |= s.MaskMask
-            let maskKey = UnsafeMutablePointer<UInt8>(buffer + offset)
-            _ = SecRandomCopyBytes(kSecRandomDefault, Int(MemoryLayout<UInt32>.size), maskKey)
-            offset += MemoryLayout<UInt32>.size
+            var frame = Data(capacity: dataLength + s.MaxFrameSize)
 
-            for i in 0..<dataLength {
-                buffer[offset] = data[i] ^ maskKey[i % MemoryLayout<UInt32>.size]
-                offset += 1
-            }
-            var total = 0
-            while !sOperation.isCancelled {
-                if !s.readyToWrite {
-                    s.doDisconnect(WSError(type: .outputStreamWriteError, message: "output stream had an error during write", code: 0))
-                    break
-                }
-                let stream = s.stream
-                let writeBuffer = UnsafeRawPointer(frame!.bytes+total).assumingMemoryBound(to: UInt8.self)
-                let len = stream.write(data: Data(bytes: writeBuffer, count: offset-total))
-                if len <= 0 {
-                    s.doDisconnect(WSError(type: .outputStreamWriteError, message: "output stream had an error during write", code: 0))
-                    break
+            frame.withUnsafeMutableBytes { (buffer: UnsafeMutablePointer<UInt8>) in
+                buffer[0] = firstByte
+                if dataLength < 126 {
+                    buffer[1] = CUnsignedChar(dataLength)
+                } else if dataLength <= Int(UInt16.max) {
+                    buffer[1] = 126
+                    WebSocket.writeUint16(buffer, offset: offset, value: UInt16(dataLength))
+                    offset += MemoryLayout<UInt16>.size
                 } else {
-                    total += len
+                    buffer[1] = 127
+                    WebSocket.writeUint64(buffer, offset: offset, value: UInt64(dataLength))
+                    offset += MemoryLayout<UInt64>.size
                 }
-                if total >= offset {
-                    if let queue = self?.callbackQueue, let callback = writeCompletion {
-                        queue.async {
-                            callback()
-                        }
-                    }
+                buffer[1] |= s.MaskMask
+                let maskKey = UnsafeMutablePointer<UInt8>(buffer + offset)
+                _ = SecRandomCopyBytes(kSecRandomDefault, Int(MemoryLayout<UInt32>.size), maskKey)
+                offset += MemoryLayout<UInt32>.size
 
-                    break
+                for i in 0..<dataLength {
+                    buffer[offset] = data[i] ^ maskKey[i % MemoryLayout<UInt32>.size]
+                    offset += 1
                 }
+            }
+
+            if !s.readyToWrite {
+                s.doDisconnect(WSError(type: .outputStreamWriteError, message: "output stream had an error during write", code: 0))
+                completion()
+                return
+            }
+
+            let stream = s.stream
+
+            stream.write(data: &frame, isCancelled: isCancelled) { error in
+                if let error = error {
+                    s.doDisconnect(error)
+                    completion()
+                }
+
+                if let queue = self?.callbackQueue, let callback = writeCompletion {
+                    queue.async {
+                        callback()
+                    }
+                }
+
+                completion()
             }
         }
         writeQueue.addOperation(operation)

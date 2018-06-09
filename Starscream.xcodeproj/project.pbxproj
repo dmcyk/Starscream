@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2D30FEA120CC229900003089 /* NetworkStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D30FEA020CC229900003089 /* NetworkStream.swift */; };
+		2D30FEA320CC32E200003089 /* AsynchronousFinishOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D30FEA220CC32E200003089 /* AsynchronousFinishOperation.swift */; };
+		2D30FEA420CC357700003089 /* AsynchronousFinishOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D30FEA220CC32E200003089 /* AsynchronousFinishOperation.swift */; };
 		335FA1F61F5DF71D00F6D2EC /* Compression.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88EAF7E1ED4DFB5004FE2C3 /* Compression.swift */; };
 		335FA1F71F5DF71D00F6D2EC /* SSLSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C135FFF1C473BEF00AA3A01 /* SSLSecurity.swift */; };
 		335FA1F81F5DF71D00F6D2EC /* WebSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1360011C473BEF00AA3A01 /* WebSocket.swift */; };
@@ -22,6 +25,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2D30FEA020CC229900003089 /* NetworkStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkStream.swift; sourceTree = "<group>"; };
+		2D30FEA220CC32E200003089 /* AsynchronousFinishOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsynchronousFinishOperation.swift; sourceTree = "<group>"; };
 		335FA2021F5DF71D00F6D2EC /* Starscream Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Starscream Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		33CCF0921F5DDC030099B092 /* Starscream.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Starscream.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C135FFF1C473BEF00AA3A01 /* SSLSecurity.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = SSLSecurity.swift; path = Sources/SSLSecurity.swift; sourceTree = SOURCE_ROOT; };
@@ -88,6 +93,8 @@
 				5C1360011C473BEF00AA3A01 /* WebSocket.swift */,
 				D88EAF7E1ED4DFB5004FE2C3 /* Compression.swift */,
 				6B3E79E919D48B7F006071F7 /* Supporting Files */,
+				2D30FEA020CC229900003089 /* NetworkStream.swift */,
+				2D30FEA220CC32E200003089 /* AsynchronousFinishOperation.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -188,7 +195,7 @@
 			attributes = {
 				LastSwiftMigration = 0700;
 				LastSwiftUpdateCheck = 0700;
-				LastUpgradeCheck = 0900;
+				LastUpgradeCheck = 1000;
 				ORGANIZATIONNAME = Vluxe;
 				TargetAttributes = {
 					335FA1F41F5DF71D00F6D2EC = {
@@ -236,6 +243,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2D30FEA420CC357700003089 /* AsynchronousFinishOperation.swift in Sources */,
 				335FA1F61F5DF71D00F6D2EC /* Compression.swift in Sources */,
 				335FA1F71F5DF71D00F6D2EC /* SSLSecurity.swift in Sources */,
 				335FA1F81F5DF71D00F6D2EC /* WebSocket.swift in Sources */,
@@ -248,7 +256,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2D30FEA120CC229900003089 /* NetworkStream.swift in Sources */,
 				33CCF0861F5DDC030099B092 /* Compression.swift in Sources */,
+				2D30FEA320CC32E200003089 /* AsynchronousFinishOperation.swift in Sources */,
 				33CCF0871F5DDC030099B092 /* WebSocket.swift in Sources */,
 				33CCF0881F5DDC030099B092 /* SSLSecurity.swift in Sources */,
 			);
@@ -312,7 +322,7 @@
 			buildSettings = {
 				BITCODE_GENERATION_MODE = marker;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "Mac Developer";
+				CODE_SIGN_IDENTITY = "";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = "";
@@ -345,7 +355,7 @@
 			buildSettings = {
 				BITCODE_GENERATION_MODE = bitcode;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = "";
@@ -386,12 +396,14 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
@@ -447,12 +459,14 @@
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
